@@ -40,8 +40,8 @@ export interface Room {
   createdAt: number;
 }
 
-// 自动踢出超时时间（2分钟）
-const PLAYER_TIMEOUT_MS = 2 * 60 * 1000;
+// 自动踢出超时时间（2小时）
+const PLAYER_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
 class RoomManager {
   private rooms: Map<string, Room> = new Map();
@@ -49,7 +49,7 @@ class RoomManager {
 
   constructor() {
     // 启动定期检查不活跃玩家的任务
-    setInterval(() => this.checkInactivePlayers(), 30000); // 每30秒检查一次
+    setInterval(() => this.checkInactivePlayers(), 60 * 60 * 1000); // 每小时检查一次
   }
 
   // 检查并踢出不活跃的玩家
