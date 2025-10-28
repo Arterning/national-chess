@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -8,11 +8,11 @@ import PiecePlacement from '@/components/game/PiecePlacement';
 import { Piece, PieceType } from '@/types/game';
 
 interface PageProps {
-  params: Promise<{ roomId: string }>;
+  params: { roomId: string };
 }
 
 export default function RoomPage({ params }: PageProps) {
-  const { roomId } = use(params);
+  const { roomId } = params;
   const router = useRouter();
   const { user } = useUser();
   const [isPlacingPieces, setIsPlacingPieces] = useState(true);
