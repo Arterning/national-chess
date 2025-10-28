@@ -141,16 +141,6 @@ export function validatePieceLayout(pieces: Piece[], player: PlayerPosition): {
     }
   }
 
-  // 检查位置是否在玩家阵地内
-  const territoryPositions = getPlayerTerritoryPositions(player);
-  for (const piece of pieces) {
-    const inTerritory = territoryPositions.some(
-      pos => pos.row === piece.position.row && pos.col === piece.position.col
-    );
-    if (!inTerritory) {
-      return { valid: false, reason: '棋子位置不在阵地内' };
-    }
-  }
 
   // 检查是否有重复位置
   const positionSet = new Set<string>();
