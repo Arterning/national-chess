@@ -32,13 +32,14 @@ export function initializeWebSocket(httpServer: HTTPServer) {
     socket.on(WsMessageType.JOIN_ROOM, (data: {
       roomId?: string;
       roomName?: string;
+      roomType?: string;
       userId: string;
       username: string;
       password?: string;
       createNew?: boolean;
     }) => {
       try {
-        const { roomId, roomName, userId, username, password, createNew } = data;
+        const { roomId, roomName, roomType, userId, username, password, createNew } = data;
 
         if (createNew) {
           // 创建新房间
@@ -48,7 +49,12 @@ export function initializeWebSocket(httpServer: HTTPServer) {
             roomName || '四国军棋房间',
             userId,
             username,
-            socket.id
+            socket.id,
+            {
+              isPrivate: !!password,
+              password,
+              roomType: roomType as any,
+            }
           );
 
           socket.join(newRoomId);

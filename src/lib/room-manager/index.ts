@@ -10,6 +10,11 @@ import {
   getNextPlayer,
 } from '../game-engine/rules';
 
+export enum RoomType {
+  FOUR_PLAYER = 'FOUR_PLAYER', // 四国军棋
+  TWO_PLAYER = 'TWO_PLAYER',   // 二人军棋
+}
+
 export interface RoomPlayer {
   userId: string;
   username: string;
@@ -31,6 +36,7 @@ export interface Room {
   id: string;
   name: string;
   host: string; // userId
+  roomType: RoomType; // 房间类型
   players: RoomPlayer[];
   spectators: Spectator[]; // 观战者
   maxPlayers: number;
@@ -101,13 +107,18 @@ class RoomManager {
       isPrivate?: boolean;
       password?: string;
       maxPlayers?: number;
+      roomType?: RoomType;
     } = {}
   ): Room {
     const now = Date.now();
+    const roomType = options.roomType || RoomType.FOUR_PLAYER;
+    const maxPlayers = roomType === RoomType.TWO_PLAYER ? 2 : 4;
+
     const room: Room = {
       id: roomId,
       name,
       host: hostUserId,
+      roomType,
       players: [
         {
           userId: hostUserId,
@@ -119,7 +130,7 @@ class RoomManager {
         },
       ],
       spectators: [],
-      maxPlayers: options.maxPlayers || 4,
+      maxPlayers,
       isPrivate: options.isPrivate || false,
       password: options.password,
       createdAt: now,
@@ -261,8 +272,9 @@ class RoomManager {
 
     player.isReady = true;
 
-    // 检查是否所有玩家都准备好
-    const allReady = room.players.length === 4 && room.players.every(p => p.isReady);
+    // 检查是否所有玩家都准备好（根据房间类型判断）
+    const requiredPlayers = room.roomType === RoomType.TWO_PLAYER ? 2 : 4;
+    const allReady = room.players.length === requiredPlayers && room.players.every(p => p.isReady);
 
     // 如果都准备好，初始化游戏
     if (allReady) {

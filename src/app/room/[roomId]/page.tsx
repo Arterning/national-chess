@@ -22,6 +22,8 @@ interface RoomPlayer {
 interface RoomData {
   id: string;
   name: string;
+  roomType?: string;
+  maxPlayers?: number;
   players: RoomPlayer[];
   spectators: any[];
   gameState?: any;
@@ -193,7 +195,7 @@ export default function RoomPage({ params }: PageProps) {
           <div className="space-y-4">
             <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/10">
               <h3 className="text-xl font-bold text-white mb-4">
-                玩家 ({room?.players.length || 0}/4)
+                玩家 ({room?.players.length || 0}/{room?.maxPlayers || 4})
               </h3>
 
               <div className="space-y-3">

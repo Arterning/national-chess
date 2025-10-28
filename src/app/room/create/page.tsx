@@ -6,12 +6,14 @@ import { useUser } from '@clerk/nextjs';
 import Link from 'next/link';
 import { useSocket } from '@/hooks/useSocket';
 import { WsMessageType } from '@/types/game';
+import { RoomType } from '@/lib/room-manager';
 
 export default function CreateRoomPage() {
   const router = useRouter();
   const { user } = useUser();
   const { socket, isConnected } = useSocket();
   const [roomName, setRoomName] = useState('');
+  const [roomType, setRoomType] = useState<RoomType>(RoomType.FOUR_PLAYER);
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -47,6 +49,7 @@ export default function CreateRoomPage() {
       socket.emit(WsMessageType.JOIN_ROOM, {
         roomId,
         roomName: roomName.trim(),
+        roomType,
         userId: user.id,
         username: user.firstName || user.username || '玩家',
         createNew: true,
@@ -105,6 +108,39 @@ export default function CreateRoomPage() {
               />
             </div>
 
+            {/* Room Type */}
+            <div className="mb-6">
+              <label className="block text-white text-sm font-semibold mb-2">
+                游戏类型
+              </label>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setRoomType(RoomType.FOUR_PLAYER)}
+                  className={`px-4 py-3 rounded-lg border-2 transition-all ${
+                    roomType === RoomType.FOUR_PLAYER
+                      ? 'bg-blue-600 border-blue-500 text-white'
+                      : 'bg-white/10 border-white/20 text-blue-200 hover:border-blue-500'
+                  }`}
+                >
+                  <div className="font-semibold">四国军棋</div>
+                  <div className="text-xs mt-1">4人对战</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRoomType(RoomType.TWO_PLAYER)}
+                  className={`px-4 py-3 rounded-lg border-2 transition-all ${
+                    roomType === RoomType.TWO_PLAYER
+                      ? 'bg-blue-600 border-blue-500 text-white'
+                      : 'bg-white/10 border-white/20 text-blue-200 hover:border-blue-500'
+                  }`}
+                >
+                  <div className="font-semibold">二人军棋</div>
+                  <div className="text-xs mt-1">2人对战</div>
+                </button>
+              </div>
+            </div>
+
             {/* Privacy Settings */}
             <div className="mb-6">
               <label className="flex items-center gap-3 cursor-pointer">
@@ -147,9 +183,19 @@ export default function CreateRoomPage() {
                 游戏规则
               </h3>
               <ul className="text-blue-200 text-sm space-y-1">
-                <li>• 需要 4 名玩家才能开始游戏</li>
-                <li>• 每位玩家需要摆放自己的棋子</li>
-                <li>• 所有玩家准备完成后游戏开始</li>
+                {roomType === RoomType.FOUR_PLAYER ? (
+                  <>
+                    <li>• 需要 4 名玩家才能开始游戏</li>
+                    <li>• 每位玩家需要摆放自己的棋子</li>
+                    <li>• 所有玩家准备完成后游戏开始</li>
+                  </>
+                ) : (
+                  <>
+                    <li>• 需要 2 名玩家即可开始游戏</li>
+                    <li>• 每位玩家需要摆放自己的棋子</li>
+                    <li>• 双方玩家准备完成后游戏开始</li>
+                  </>
+                )}
               </ul>
             </div>
 
