@@ -94,13 +94,19 @@ export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
   }, [createDefaultLayout]);
 
   const handleCellClick = (row: number, col: number) => {
-    if (!selectedPiece) return;
+    // 检查该位置是否有棋子
+    const pieceAtPosition = pieces.find(
+      p => p.position.row === row && p.position.col === col
+    );
 
-    // 检查是否在上方玩家阵地内 (行: 0-5, 列: 3-7)
-    if (row < 0 || row > 5 || col < 3 || col > 7) {
-      alert('请在你的阵地内放置棋子');
+    // 如果点击的位置有棋子，选中该棋子（或交换）
+    if (pieceAtPosition) {
+      handlePieceClick(pieceAtPosition.id);
       return;
     }
+
+    // 如果没有选中的棋子，什么也不做
+    if (!selectedPiece) return;
 
     // 检查是否是行营（行营不能放置棋子）
     if (isCamp(row, col)) {
@@ -108,17 +114,7 @@ export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
       return;
     }
 
-    // 检查该位置是否已有棋子
-    const existingPiece = pieces.find(
-      p => p.position.row === row && p.position.col === col
-    );
-
-    if (existingPiece) {
-      alert('该位置已有棋子');
-      return;
-    }
-
-    // 放置棋子
+    // 移动选中的棋子到空位置
     setPieces(prev =>
       prev.map(p =>
         p.id === selectedPiece
@@ -131,7 +127,37 @@ export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
   };
 
   const handlePieceClick = (pieceId: string) => {
-    setSelectedPiece(pieceId);
+    // 如果点击的是已选中的棋子，取消选中
+    if (selectedPiece === pieceId) {
+      setSelectedPiece(null);
+      return;
+    }
+
+    // 如果已经有选中的棋子，交换两个棋子的位置
+    if (selectedPiece) {
+      const piece1 = pieces.find(p => p.id === selectedPiece);
+      const piece2 = pieces.find(p => p.id === pieceId);
+
+      if (piece1 && piece2) {
+        // 交换位置
+        setPieces(prev =>
+          prev.map(p => {
+            if (p.id === piece1.id) {
+              return { ...p, position: piece2.position };
+            }
+            if (p.id === piece2.id) {
+              return { ...p, position: piece1.position };
+            }
+            return p;
+          })
+        );
+      }
+
+      setSelectedPiece(null);
+    } else {
+      // 没有选中的棋子，选中当前棋子
+      setSelectedPiece(pieceId);
+    }
   };
 
   const handleConfirm = () => {
@@ -182,6 +208,7 @@ export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
                 p => p.position.row === actualRow && p.position.col === actualCol
               );
               const isCampCell = isCamp(actualRow, actualCol);
+              const isSelected = piece && piece.id === selectedPiece;
 
               // 大本营位置 - 在最后一行（第6行，索引5）
               const isHeadquarters = (actualRow === 5 && actualCol === 4) || (actualRow === 5 && actualCol === 6);
@@ -196,12 +223,13 @@ export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
                     ${isCampCell ? 'rounded-full bg-orange-900/30 border-orange-500/50 cursor-not-allowed' : 'rounded-lg'}
                     ${isHeadquarters ? 'bg-yellow-900/30 border-yellow-500' : ''}
                     ${!isCampCell && !isHeadquarters && selectedPiece ? 'cursor-pointer hover:border-blue-500' : ''}
-                    ${!isCampCell && !isHeadquarters && piece ? 'bg-blue-600 border-blue-500' : ''}
+                    ${!isCampCell && !isHeadquarters && piece && !isSelected ? 'bg-blue-600 border-blue-500' : ''}
+                    ${!isCampCell && !isHeadquarters && isSelected ? 'bg-green-600 border-green-400 animate-bounce' : ''}
                     ${!isCampCell && !isHeadquarters && !piece ? 'bg-white/5 border-white/20' : ''}
                   `}
                 >
                   {piece && (
-                    <span className="text-white font-bold text-lg">
+                    <span className={`text-white font-bold text-lg ${isSelected ? 'animate-pulse' : ''}`}>
                       {PIECE_NAMES[piece.type]}
                     </span>
                   )}
@@ -218,30 +246,19 @@ export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
         </div>
       </div>
 
-      {/* Piece List */}
-      <div>
-        <h3 className="text-white font-semibold mb-3">可用棋子</h3>
-        <div className="grid grid-cols-5 gap-2">
-          {pieces
-            .filter(p => p.position.row < 0)
-            .map(piece => (
-              <button
-                key={piece.id}
-                onClick={() => handlePieceClick(piece.id)}
-                className={`
-                  px-3 py-2 rounded-lg border-2 transition-all
-                  ${selectedPiece === piece.id
-                    ? 'bg-blue-600 border-blue-500 scale-110'
-                    : 'bg-white/10 border-white/20 hover:border-blue-500'
-                  }
-                `}
-              >
-                <span className="text-white font-bold">
-                  {PIECE_NAMES[piece.type]}
-                </span>
-              </button>
-            ))}
-        </div>
+      {/* Instructions */}
+      <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
+        <h3 className="text-blue-300 font-semibold mb-2 flex items-center gap-2">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          操作说明
+        </h3>
+        <ul className="text-blue-200 text-sm space-y-1">
+          <li>• 点击一个棋子，再点击另一个棋子，即可交换位置</li>
+          <li>• 点击已选中的棋子可以取消选中</li>
+          <li>• 选中的棋子会有跳动效果</li>
+        </ul>
       </div>
 
       {/* Actions */}
