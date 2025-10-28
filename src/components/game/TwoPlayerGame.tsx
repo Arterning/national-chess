@@ -35,8 +35,8 @@ export default function TwoPlayerGame({ gameState, currentUserId, onMove }: TwoP
 
   // 大本营位置
   const isHeadquarters = (row: number, col: number) => {
-    return (row === 5 && (col === 1 || col === 3)) || // 上方大本营
-           (row === 7 && (col === 1 || col === 3));  // 下方大本营
+    return (row === 0 && (col === 1 || col === 3)) || // 上方大本营
+           (row === 12 && (col === 1 || col === 3));  // 下方大本营
   };
 
   const handleCellClick = (row: number, col: number) => {
