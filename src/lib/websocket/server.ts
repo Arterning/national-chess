@@ -17,6 +17,17 @@ export function initializeWebSocket(httpServer: HTTPServer) {
   io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
 
+    // 获取所有公开房间列表
+    socket.on('GET_ROOM_LIST', () => {
+      try {
+        const rooms = roomManager.getPublicRooms();
+        socket.emit('ROOM_LIST', { rooms });
+      } catch (error) {
+        console.error('Get room list error:', error);
+        socket.emit(WsMessageType.ERROR, { message: '获取房间列表失败' });
+      }
+    });
+
     // 创建房间
     socket.on(WsMessageType.JOIN_ROOM, (data: {
       roomId?: string;
@@ -47,11 +58,9 @@ export function initializeWebSocket(httpServer: HTTPServer) {
             room,
           });
 
-          // 通知其他客户端有新房间
-          socket.broadcast.emit(WsMessageType.PLAYER_JOINED, {
-            roomId: newRoomId,
-            room,
-          });
+          // 广播房间列表更新
+          const rooms = roomManager.getPublicRooms();
+          io.emit('ROOM_LIST_UPDATE', { rooms });
         } else {
           // 加入现有房间
           if (!roomId) {
@@ -82,6 +91,10 @@ export function initializeWebSocket(httpServer: HTTPServer) {
             },
             room: result.room,
           });
+
+          // 广播房间列表更新
+          const rooms = roomManager.getPublicRooms();
+          io.emit('ROOM_LIST_UPDATE', { rooms });
         }
       } catch (error) {
         console.error('Join room error:', error);
@@ -106,6 +119,10 @@ export function initializeWebSocket(httpServer: HTTPServer) {
               room,
             });
           }
+
+          // 广播房间列表更新
+          const rooms = roomManager.getPublicRooms();
+          io.emit('ROOM_LIST_UPDATE', { rooms });
         }
       } catch (error) {
         console.error('Leave room error:', error);

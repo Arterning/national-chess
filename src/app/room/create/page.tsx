@@ -1,19 +1,44 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import Link from 'next/link';
+import { useSocket } from '@/hooks/useSocket';
+import { WsMessageType } from '@/types/game';
 
 export default function CreateRoomPage() {
   const router = useRouter();
   const { user } = useUser();
+  const { socket, isConnected } = useSocket();
   const [roomName, setRoomName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+
+    // 监听房间创建成功
+    socket.on(WsMessageType.JOIN_ROOM, (data: { success: boolean; room?: any }) => {
+      if (data.success && data.room) {
+        console.log('房间创建成功:', data.room);
+        setIsCreating(false);
+        router.push(`/room/${data.room.id}`);
+      }
+    });
+
+    return () => {
+      socket.off(WsMessageType.JOIN_ROOM);
+    };
+  }, [socket, isConnected, router]);
+
   const handleCreateRoom = async () => {
+    if (!user) {
+      alert('请先登录');
+      return;
+    }
+
     if (!roomName.trim()) {
       alert('请输入房间名称');
       return;
@@ -24,16 +49,28 @@ export default function CreateRoomPage() {
       return;
     }
 
+    if (!socket || !isConnected) {
+      alert('未连接到服务器，请稍后重试');
+      return;
+    }
+
     setIsCreating(true);
 
     try {
-      // TODO: 创建房间并跳转
       const roomId = `room_${Date.now()}`;
-      router.push(`/room/${roomId}`);
+
+      // 通过 WebSocket 创建房间
+      socket.emit(WsMessageType.JOIN_ROOM, {
+        roomId,
+        roomName: roomName.trim(),
+        userId: user.id,
+        username: user.firstName || user.username || '玩家',
+        createNew: true,
+        password: isPrivate ? password : undefined,
+      });
     } catch (error) {
       console.error('创建房间失败:', error);
       alert('创建房间失败，请重试');
-    } finally {
       setIsCreating(false);
     }
   };

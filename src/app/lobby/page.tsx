@@ -4,6 +4,19 @@ import { useState, useEffect } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useSocket } from '@/hooks/useSocket';
+
+interface RoomData {
+  id: string;
+  name: string;
+  host: string;
+  players: any[];
+  spectators: any[];
+  maxPlayers: number;
+  isPrivate: boolean;
+  gameState?: any;
+  createdAt: number;
+}
 
 interface Room {
   id: string;
@@ -19,49 +32,55 @@ interface Room {
 export default function LobbyPage() {
   const router = useRouter();
   const { user } = useUser();
+  const { socket, isConnected } = useSocket();
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    // TODO: 通过 WebSocket 获取房间列表
-    // 模拟数据
-    setTimeout(() => {
-      setRooms([
-        {
-          id: 'room_1',
-          name: '新手房间',
-          host: '玩家A',
-          playerCount: 2,
-          maxPlayers: 4,
-          status: 'waiting',
-          isPrivate: false,
-          createdAt: Date.now() - 60000,
-        },
-        {
-          id: 'room_2',
-          name: '高手对决',
-          host: '玩家B',
-          playerCount: 4,
-          maxPlayers: 4,
-          status: 'playing',
-          isPrivate: false,
-          createdAt: Date.now() - 120000,
-        },
-        {
-          id: 'room_3',
-          name: '休闲娱乐',
-          host: '玩家C',
-          playerCount: 1,
-          maxPlayers: 4,
-          status: 'waiting',
-          isPrivate: false,
-          createdAt: Date.now() - 30000,
-        },
-      ]);
+    if (!socket || !isConnected) return;
+
+    // 请求房间列表
+    socket.emit('GET_ROOM_LIST');
+
+    // 监听房间列表
+    socket.on('ROOM_LIST', (data: { rooms: RoomData[] }) => {
+      console.log('收到房间列表:', data.rooms);
+      const formattedRooms = data.rooms.map(room => ({
+        id: room.id,
+        name: room.name,
+        host: room.players[0]?.username || '未知',
+        playerCount: room.players.length,
+        maxPlayers: room.maxPlayers,
+        status: room.gameState?.status === 'PLAYING' ? 'playing' as const : 'waiting' as const,
+        isPrivate: room.isPrivate,
+        createdAt: room.createdAt,
+      }));
+      setRooms(formattedRooms);
       setLoading(false);
-    }, 500);
-  }, []);
+    });
+
+    // 监听房间列表更新
+    socket.on('ROOM_LIST_UPDATE', (data: { rooms: RoomData[] }) => {
+      console.log('房间列表更新:', data.rooms);
+      const formattedRooms = data.rooms.map(room => ({
+        id: room.id,
+        name: room.name,
+        host: room.players[0]?.username || '未知',
+        playerCount: room.players.length,
+        maxPlayers: room.maxPlayers,
+        status: room.gameState?.status === 'PLAYING' ? 'playing' as const : 'waiting' as const,
+        isPrivate: room.isPrivate,
+        createdAt: room.createdAt,
+      }));
+      setRooms(formattedRooms);
+    });
+
+    return () => {
+      socket.off('ROOM_LIST');
+      socket.off('ROOM_LIST_UPDATE');
+    };
+  }, [socket, isConnected]);
 
   const handleJoinRoom = (room: Room) => {
     if (room.playerCount >= room.maxPlayers && room.status === 'waiting') {
