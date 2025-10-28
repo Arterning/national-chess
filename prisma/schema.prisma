@@ -1,0 +1,70 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 用户模型 - Clerk 会处理认证，这里只存储游戏相关数据
+model User {
+  id            String        @id // Clerk user ID
+  username      String        @unique
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // 游戏统计
+  gamesPlayed   Int           @default(0)
+  gamesWon      Int           @default(0)
+  rating        Int           @default(1000)
+
+  // 关联
+  gameHistories GameHistory[]
+
+  @@map("users")
+}
+
+// 游戏历史记录
+model GameHistory {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  endedAt     DateTime @updatedAt
+
+  // 游戏结果
+  winnerId    String?
+  winnerTeam  Int?     // 0 or 1 (上下联盟 vs 左右联盟)
+
+  // 玩家信息 (JSON 格式存储4个玩家的详细信息)
+  players     Json     // { position: 0-3, userId: string, username: string, team: 0-1 }[]
+
+  // 游戏记录 (可选：用于回放)
+  moves       Json?    // 移动历史记录
+
+  // 游戏时长
+  duration    Int?     // 秒数
+
+  // 关联
+  playerRecords User[] @relation()
+
+  @@map("game_histories")
+}
+
+// 房间配置（可选：如果需要持久化房间设置）
+model RoomConfig {
+  id              String   @id @default(cuid())
+  name            String
+  isPrivate       Boolean  @default(false)
+  password        String?
+  maxPlayers      Int      @default(4)
+  createdAt       DateTime @default(now())
+  creatorId       String
+
+  @@map("room_configs")
+}

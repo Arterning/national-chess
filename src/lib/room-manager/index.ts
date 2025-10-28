@@ -1,0 +1,340 @@
+// 房间管理系统（内存中维护游戏状态）
+
+import { GameState, PlayerPosition, Piece, GameStatus } from '@/types/game';
+import { initializeGameState, placePiecesOnBoard, validatePieceLayout } from '../game-engine/board';
+import {
+  validateMove,
+  calculateBattle,
+  checkPlayerEliminated,
+  checkGameEnd,
+  getNextPlayer,
+} from '../game-engine/rules';
+
+export interface RoomPlayer {
+  userId: string;
+  username: string;
+  socketId: string;
+  position?: PlayerPosition;
+  isReady: boolean;
+}
+
+export interface Room {
+  id: string;
+  name: string;
+  host: string; // userId
+  players: RoomPlayer[];
+  maxPlayers: number;
+  isPrivate: boolean;
+  password?: string;
+  gameState?: GameState;
+  createdAt: number;
+}
+
+class RoomManager {
+  private rooms: Map<string, Room> = new Map();
+
+  // 创建房间
+  createRoom(
+    roomId: string,
+    name: string,
+    hostUserId: string,
+    hostUsername: string,
+    hostSocketId: string,
+    options: {
+      isPrivate?: boolean;
+      password?: string;
+      maxPlayers?: number;
+    } = {}
+  ): Room {
+    const room: Room = {
+      id: roomId,
+      name,
+      host: hostUserId,
+      players: [
+        {
+          userId: hostUserId,
+          username: hostUsername,
+          socketId: hostSocketId,
+          isReady: false,
+        },
+      ],
+      maxPlayers: options.maxPlayers || 4,
+      isPrivate: options.isPrivate || false,
+      password: options.password,
+      createdAt: Date.now(),
+    };
+
+    this.rooms.set(roomId, room);
+    return room;
+  }
+
+  // 加入房间
+  joinRoom(
+    roomId: string,
+    userId: string,
+    username: string,
+    socketId: string,
+    password?: string
+  ): { success: boolean; room?: Room; error?: string } {
+    const room = this.rooms.get(roomId);
+
+    if (!room) {
+      return { success: false, error: '房间不存在' };
+    }
+
+    if (room.players.length >= room.maxPlayers) {
+      return { success: false, error: '房间已满' };
+    }
+
+    if (room.isPrivate && room.password !== password) {
+      return { success: false, error: '密码错误' };
+    }
+
+    // 检查是否已在房间中
+    const existingPlayer = room.players.find(p => p.userId === userId);
+    if (existingPlayer) {
+      // 更新 socket ID（重连场景）
+      existingPlayer.socketId = socketId;
+      return { success: true, room };
+    }
+
+    // 添加新玩家
+    room.players.push({
+      userId,
+      username,
+      socketId,
+      isReady: false,
+    });
+
+    return { success: true, room };
+  }
+
+  // 离开房间
+  leaveRoom(roomId: string, userId: string): { success: boolean; shouldDeleteRoom: boolean } {
+    const room = this.rooms.get(roomId);
+
+    if (!room) {
+      return { success: false, shouldDeleteRoom: false };
+    }
+
+    room.players = room.players.filter(p => p.userId !== userId);
+
+    // 如果房间为空，删除房间
+    if (room.players.length === 0) {
+      this.rooms.delete(roomId);
+      return { success: true, shouldDeleteRoom: true };
+    }
+
+    // 如果房主离开，转移房主权限
+    if (room.host === userId && room.players.length > 0) {
+      room.host = room.players[0].userId;
+    }
+
+    return { success: true, shouldDeleteRoom: false };
+  }
+
+  // 玩家准备
+  playerReady(
+    roomId: string,
+    userId: string,
+    pieces: Piece[]
+  ): { success: boolean; error?: string; allReady?: boolean } {
+    const room = this.rooms.get(roomId);
+
+    if (!room) {
+      return { success: false, error: '房间不存在' };
+    }
+
+    const player = room.players.find(p => p.userId === userId);
+    if (!player) {
+      return { success: false, error: '玩家不在房间中' };
+    }
+
+    // 分配位置（如果还没分配）
+    if (player.position === undefined) {
+      const takenPositions = new Set(
+        room.players.filter(p => p.position !== undefined).map(p => p.position)
+      );
+
+      for (let pos = 0; pos < 4; pos++) {
+        if (!takenPositions.has(pos as PlayerPosition)) {
+          player.position = pos as PlayerPosition;
+          break;
+        }
+      }
+    }
+
+    // 验证棋子布局
+    if (player.position !== undefined) {
+      const validation = validatePieceLayout(pieces, player.position);
+      if (!validation.valid) {
+        return { success: false, error: validation.reason };
+      }
+    }
+
+    player.isReady = true;
+
+    // 检查是否所有玩家都准备好
+    const allReady = room.players.length === 4 && room.players.every(p => p.isReady);
+
+    // 如果都准备好，初始化游戏
+    if (allReady) {
+      room.gameState = initializeGameState(
+        roomId,
+        room.players.map(p => ({
+          userId: p.userId,
+          username: p.username,
+          position: p.position!,
+        }))
+      );
+
+      // 放置所有玩家的棋子
+      for (const player of room.players) {
+        const gamePlayer = room.gameState.players.find(gp => gp.userId === player.userId);
+        if (gamePlayer) {
+          placePiecesOnBoard(room.gameState.board, pieces);
+        }
+      }
+
+      room.gameState.status = GameStatus.PLAYING;
+      room.gameState.startedAt = Date.now();
+    }
+
+    return { success: true, allReady };
+  }
+
+  // 执行移动
+  makeMove(
+    roomId: string,
+    userId: string,
+    pieceId: string,
+    to: { row: number; col: number }
+  ): {
+    success: boolean;
+    error?: string;
+    gameState?: GameState;
+    moveResult?: any;
+  } {
+    const room = this.rooms.get(roomId);
+
+    if (!room || !room.gameState) {
+      return { success: false, error: '游戏未开始' };
+    }
+
+    const { gameState } = room;
+    const player = room.players.find(p => p.userId === userId);
+
+    if (!player || player.position === undefined) {
+      return { success: false, error: '玩家不存在' };
+    }
+
+    // 检查是否轮到该玩家
+    if (gameState.currentTurn !== player.position) {
+      return { success: false, error: '不是你的回合' };
+    }
+
+    // 找到棋子
+    const gamePlayer = gameState.players.find(p => p.position === player.position);
+    if (!gamePlayer) {
+      return { success: false, error: '玩家状态错误' };
+    }
+
+    const piece = gamePlayer.pieces.find(p => p.id === pieceId);
+    if (!piece || !piece.isAlive) {
+      return { success: false, error: '棋子不存在或已被消灭' };
+    }
+
+    // 验证移动
+    const validation = validateMove(piece, to, gameState);
+    if (!validation.valid) {
+      return { success: false, error: validation.reason };
+    }
+
+    const from = { ...piece.position };
+    const targetPiece = gameState.board[to.row][to.col];
+
+    let moveResult;
+
+    // 执行移动
+    if (targetPiece) {
+      // 战斗
+      moveResult = calculateBattle(piece, targetPiece);
+
+      if (!moveResult.attackerSurvived) {
+        piece.isAlive = false;
+        gameState.board[from.row][from.col] = null;
+      } else {
+        gameState.board[from.row][from.col] = null;
+        piece.position = to;
+        gameState.board[to.row][to.col] = piece;
+      }
+
+      if (!moveResult.defenderSurvived) {
+        targetPiece.isAlive = false;
+      }
+
+      // 显示双方棋子
+      piece.isRevealed = true;
+      targetPiece.isRevealed = true;
+
+      // 检查防守方玩家是否被淘汰
+      if (checkPlayerEliminated(targetPiece.owner, gameState)) {
+        const defenderPlayer = gameState.players.find(p => p.position === targetPiece.owner);
+        if (defenderPlayer) {
+          defenderPlayer.isAlive = false;
+        }
+      }
+    } else {
+      // 普通移动
+      gameState.board[from.row][from.col] = null;
+      piece.position = to;
+      gameState.board[to.row][to.col] = piece;
+    }
+
+    // 记录移动
+    gameState.moveHistory.push({
+      playerId: userId,
+      pieceId,
+      from,
+      to,
+      timestamp: Date.now(),
+      result: moveResult,
+    });
+
+    // 检查游戏是否结束
+    const gameEnd = checkGameEnd(gameState);
+    if (gameEnd.ended) {
+      gameState.status = GameStatus.FINISHED;
+      gameState.winner = gameEnd.winner;
+      gameState.endedAt = Date.now();
+    } else {
+      // 切换到下一个玩家
+      gameState.currentTurn = getNextPlayer(gameState.currentTurn, gameState);
+    }
+
+    return { success: true, gameState, moveResult };
+  }
+
+  // 获取房间
+  getRoom(roomId: string): Room | undefined {
+    return this.rooms.get(roomId);
+  }
+
+  // 获取所有公开房间
+  getPublicRooms(): Room[] {
+    return Array.from(this.rooms.values()).filter(room => !room.isPrivate);
+  }
+
+  // 通过 socketId 查找玩家所在的房间
+  findRoomBySocketId(socketId: string): Room | undefined {
+    for (const room of this.rooms.values()) {
+      if (room.players.some(p => p.socketId === socketId)) {
+        return room;
+      }
+    }
+    return undefined;
+  }
+}
+
+// 单例
+export const roomManager = new RoomManager();
