@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Piece, PieceType, PlayerPosition, PIECE_NAMES } from '@/types/game';
 import { createPlayerPieces } from '@/lib/game-engine/board';
 
@@ -11,12 +11,6 @@ interface PiecePlacementProps {
 export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
   const [pieces, setPieces] = useState<Piece[]>([]);
   const [selectedPiece, setSelectedPiece] = useState<string | null>(null);
-
-  useEffect(() => {
-    // 创建初始棋子（未放置）
-    const initialPieces = createPlayerPieces(0 as PlayerPosition);
-    setPieces(initialPieces);
-  }, []);
 
   // 行营位置（上方玩家）- 转换为实际棋盘坐标
   const camps = [
@@ -30,6 +24,74 @@ export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
   const isCamp = (row: number, col: number) => {
     return camps.some(c => c.row === row && c.col === col);
   };
+
+  // 创建默认布局
+  const createDefaultLayout = useCallback((pieces: Piece[]): Piece[] => {
+    // 大本营位置
+    const leftHeadquarters = { row: 5, col: 4 }; // 左边大本营
+    const rightHeadquarters = { row: 5, col: 6 }; // 右边大本营
+
+    // 三角雷布局（围绕左边大本营）
+    const triangleMines = [
+      { row: 4, col: 4 }, // 军旗上方
+      { row: 5, col: 3 }, // 军旗左边
+      { row: 4, col: 3 }, // 左上角
+    ];
+
+    // 所有可用位置（从左到右，从上到下）
+    const availablePositions: Array<{ row: number; col: number }> = [];
+    for (let row = 0; row < 6; row++) {
+      for (let col = 3; col < 8; col++) {
+        const pos = { row, col };
+        // 排除行营、大本营、三角雷位置
+        if (
+          !isCamp(row, col) &&
+          !(row === leftHeadquarters.row && col === leftHeadquarters.col) &&
+          !(row === rightHeadquarters.row && col === rightHeadquarters.col) &&
+          !triangleMines.some(m => m.row === row && m.col === col)
+        ) {
+          availablePositions.push(pos);
+        }
+      }
+    }
+
+    let positionIndex = 0;
+
+    return pieces.map(piece => {
+      let position: { row: number; col: number };
+
+      if (piece.type === PieceType.FLAG) {
+        // 军旗放左边大本营
+        position = leftHeadquarters;
+      } else if (piece.type === PieceType.LANDMINE) {
+        // 三个地雷围绕军旗（三角形）
+        const mineIndex = pieces.filter(
+          p => p.type === PieceType.LANDMINE && pieces.indexOf(p) < pieces.indexOf(piece)
+        ).length;
+        position = triangleMines[mineIndex];
+      } else if (piece.type === PieceType.PLATOON && pieces.filter(p => p.type === PieceType.PLATOON).indexOf(piece) === 0) {
+        // 第一个排长放右边大本营
+        position = rightHeadquarters;
+      } else {
+        // 其他棋子从左到右放置
+        position = availablePositions[positionIndex];
+        positionIndex++;
+      }
+
+      return {
+        ...piece,
+        position,
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    // 创建初始棋子（未放置）
+    const initialPieces = createPlayerPieces(0 as PlayerPosition);
+    // 应用默认布局
+    const piecesWithDefaultLayout = createDefaultLayout(initialPieces);
+    setPieces(piecesWithDefaultLayout);
+  }, [createDefaultLayout]);
 
   const handleCellClick = (row: number, col: number) => {
     if (!selectedPiece) return;
@@ -72,85 +134,6 @@ export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
     setSelectedPiece(pieceId);
   };
 
-  const handleRandomPlacement = () => {
-    // 上方玩家的阵地范围 (行: 0-5, 列: 3-7)
-    const allPositions: Array<{ row: number; col: number }> = [];
-    for (let row = 0; row < 6; row++) {
-      for (let col = 3; col < 8; col++) {
-        // 排除行营位置
-        if (!isCamp(row, col)) {
-          allPositions.push({ row, col });
-        }
-      }
-    }
-
-    // 大本营位置（上方玩家）- 最后一行
-    const headquarters = [
-      { row: 5, col: 4 },
-      { row: 5, col: 6 },
-    ];
-
-    // 后两排位置（地雷只能放这里）- 对于上方玩家是第0和第1行
-    const lastTwoRows: Array<{ row: number; col: number }> = [];
-    for (let row = 0; row < 2; row++) {
-      for (let col = 3; col < 8; col++) {
-        // 排除大本营位置和行营位置
-        if (!headquarters.some(hq => hq.row === row && hq.col === col) && !isCamp(row, col)) {
-          lastTwoRows.push({ row, col });
-        }
-      }
-    }
-
-    // 其他位置（非后两排，且非行营）
-    const otherPositions = allPositions.filter(
-      pos => pos.row >= 2 && !isCamp(pos.row, pos.col)
-    );
-
-    // 洗牌函数
-    const shuffle = <T,>(array: T[]): T[] => {
-      const result = [...array];
-      for (let i = result.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [result[i], result[j]] = [result[j], result[i]];
-      }
-      return result;
-    };
-
-    // 洗牌
-    const shuffledLastTwoRows = shuffle(lastTwoRows);
-    const shuffledOtherPositions = shuffle(otherPositions);
-    const shuffledHeadquarters = shuffle([...headquarters]);
-
-    // 分配位置
-    const newPieces = pieces.map(piece => {
-      let position: { row: number; col: number };
-
-      if (piece.type === PieceType.FLAG) {
-        // 军旗放在大本营（随机选择一个）
-        position = shuffledHeadquarters.pop()!;
-      } else if (piece.type === PieceType.LANDMINE) {
-        // 地雷放在后两排
-        position = shuffledLastTwoRows.pop()!;
-      } else {
-        // 其他棋子优先放在非后两排
-        if (shuffledOtherPositions.length > 0) {
-          position = shuffledOtherPositions.pop()!;
-        } else {
-          // 如果没有位置了，放在后两排剩余位置
-          position = shuffledLastTwoRows.pop()!;
-        }
-      }
-
-      return {
-        ...piece,
-        position,
-      };
-    });
-
-    setPieces(newPieces);
-    setSelectedPiece(null);
-  };
-
   const handleConfirm = () => {
     // 检查所有棋子是否都已放置
     const unplacedPieces = pieces.filter(p => p.position.row < 0 || p.position.col < 0);
@@ -166,26 +149,6 @@ export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
       { row: 5, col: 6 },
     ];
 
-    // 检查军旗是否在大本营
-    const flags = pieces.filter(p => p.type === PieceType.FLAG);
-    for (const flag of flags) {
-      const inHeadquarters = headquarters.some(
-        hq => hq.row === flag.position.row && hq.col === flag.position.col
-      );
-      if (!inHeadquarters) {
-        alert('军旗必须放在大本营（最后一行第2列或第4列）');
-        return;
-      }
-    }
-
-    // 检查地雷是否在后两排（对于上方玩家是第0和第1行）
-    const landmines = pieces.filter(p => p.type === PieceType.LANDMINE);
-    for (const mine of landmines) {
-      if (mine.position.row > 1) {
-        alert('地雷必须放在后两排（第1-2行）');
-        return;
-      }
-    }
 
     onComplete(pieces);
   };
@@ -282,17 +245,11 @@ export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
       </div>
 
       {/* Actions */}
-      <div className="flex gap-4">
-        <button
-          onClick={handleRandomPlacement}
-          className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
-        >
-          随机布局
-        </button>
+      <div>
         <button
           onClick={handleConfirm}
           disabled={placedCount < 25}
-          className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold rounded-lg transition-all disabled:cursor-not-allowed"
+          className="w-full px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold rounded-lg transition-all disabled:cursor-not-allowed"
         >
           确认布局
         </button>

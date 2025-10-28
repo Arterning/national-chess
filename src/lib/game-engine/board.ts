@@ -169,22 +169,6 @@ export function validatePieceLayout(pieces: Piece[], player: PlayerPosition): {
     getHeadquartersPositions(player)[1],
   ];
 
-  for (const flag of flags) {
-    const inHeadquarters = headquarters.some(
-      hq => hq.row === flag.position.row && hq.col === flag.position.col
-    );
-    if (!inHeadquarters) {
-      return { valid: false, reason: '军旗必须放在大本营' };
-    }
-  }
-
-  // 检查地雷是否在后两行
-  const landmines = pieces.filter(p => p.type === PieceType.LANDMINE);
-  for (const mine of landmines) {
-    if (!isInLastTwoRows(mine.position, player)) {
-      return { valid: false, reason: '地雷必须放在后两行' };
-    }
-  }
 
   return { valid: true };
 }
