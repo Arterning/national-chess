@@ -208,7 +208,7 @@ class RoomManager {
 
     // 如果房间为空（没有玩家），删除房间
     if (room.players.length === 0) {
-      this.rooms.delete(roomId);
+      // this.rooms.delete(roomId);
       return { success: true, shouldDeleteRoom: true };
     }
 

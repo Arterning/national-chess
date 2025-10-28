@@ -53,8 +53,13 @@ export function initializeWebSocket(httpServer: HTTPServer) {
 
           socket.join(newRoomId);
 
-          socket.emit(WsMessageType.JOIN_ROOM, {
-            success: true,
+          // 通知房间内所有玩家（包括创建者）
+          io.to(newRoomId).emit(WsMessageType.PLAYER_JOINED, {
+            player: {
+              userId,
+              username,
+              socketId: socket.id,
+            },
             room,
           });
 
@@ -77,13 +82,8 @@ export function initializeWebSocket(httpServer: HTTPServer) {
 
           socket.join(roomId);
 
-          socket.emit(WsMessageType.JOIN_ROOM, {
-            success: true,
-            room: result.room,
-          });
-
-          // 通知房间内其他玩家
-          socket.to(roomId).emit(WsMessageType.PLAYER_JOINED, {
+          // 通知房间内所有玩家（包括刚加入的玩家）
+          io.to(roomId).emit(WsMessageType.PLAYER_JOINED, {
             player: {
               userId,
               username,

@@ -16,22 +16,6 @@ export default function CreateRoomPage() {
   const [password, setPassword] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
-  useEffect(() => {
-    if (!socket || !isConnected) return;
-
-    // 监听房间创建成功
-    socket.on(WsMessageType.JOIN_ROOM, (data: { success: boolean; room?: any }) => {
-      if (data.success && data.room) {
-        console.log('房间创建成功:', data.room);
-        setIsCreating(false);
-        router.push(`/room/${data.room.id}`);
-      }
-    });
-
-    return () => {
-      socket.off(WsMessageType.JOIN_ROOM);
-    };
-  }, [socket, isConnected, router]);
 
   const handleCreateRoom = async () => {
     if (!user) {
@@ -68,6 +52,9 @@ export default function CreateRoomPage() {
         createNew: true,
         password: isPrivate ? password : undefined,
       });
+
+      // 直接跳转到房间页面
+      router.push(`/room/${roomId}`);
     } catch (error) {
       console.error('创建房间失败:', error);
       alert('创建房间失败，请重试');
