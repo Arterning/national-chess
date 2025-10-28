@@ -5,6 +5,7 @@ import { useUser } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import PiecePlacement from '@/components/game/PiecePlacement';
+import TwoPlayerGame from '@/components/game/TwoPlayerGame';
 import { Piece, PieceType, WsMessageType } from '@/types/game';
 import { useSocket } from '@/hooks/useSocket';
 
@@ -38,6 +39,8 @@ export default function RoomPage({ params }: PageProps) {
   const [isReady, setIsReady] = useState(false);
   const [room, setRoom] = useState<RoomData | null>(null);
   const [placedPieces, setPlacedPieces] = useState<Piece[]>([]);
+  const [gameState, setGameState] = useState<any>(null);
+  const [isGameStarted, setIsGameStarted] = useState(false);
 
   // 监听房间事件
   useEffect(() => {
@@ -70,8 +73,10 @@ export default function RoomPage({ params }: PageProps) {
 
     // 监听游戏开始
     const handleGameStart = (data: { gameState: any }) => {
-      console.log('游戏开始:', data.gameState);
+      console.log('游戏开始，收到游戏状态:', data.gameState);
+      setGameState(data.gameState);
       setIsPlacingPieces(false);
+      setIsGameStarted(true);
     };
 
     // 监听错误
@@ -172,7 +177,19 @@ export default function RoomPage({ params }: PageProps) {
         <div className="grid lg:grid-cols-[1fr_300px] gap-6">
           {/* Main Game Area */}
           <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 border border-white/10">
-            {isPlacingPieces ? (
+            {isGameStarted && gameState ? (
+              <div>
+                <h2 className="text-2xl font-bold text-white mb-6">游戏进行中</h2>
+                <TwoPlayerGame
+                  gameState={gameState}
+                  currentUserId={user?.id || ''}
+                  onMove={(from, to) => {
+                    // TODO: 实现移动逻辑
+                    console.log('移动:', from, to);
+                  }}
+                />
+              </div>
+            ) : isPlacingPieces ? (
               <div>
                 <h2 className="text-2xl font-bold text-white mb-6">摆放棋子</h2>
                 <PiecePlacement onComplete={handlePiecesPlaced} />
