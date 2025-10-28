@@ -222,13 +222,11 @@ export default function RoomPage({ params }: PageProps) {
               </h3>
 
               <div className="space-y-3">
-                {[0, 1, 2, 3].map((position) => {
-                  const player = room?.players.find(p => p.position === position);
-                  const positionName = position === 0 ? '上' : position === 1 ? '右' : position === 2 ? '下' : '左';
+                {room?.players.map((player) => {
 
                   return (
                     <div
-                      key={position}
+                      key={player.userId}
                       className={`rounded-lg p-3 border transition-all ${
                         player
                           ? 'bg-white/5 border-white/10'
@@ -243,7 +241,7 @@ export default function RoomPage({ params }: PageProps) {
                               : 'bg-white/10'
                           }`}>
                             <span className={`font-bold ${player ? 'text-white' : 'text-gray-500'}`}>
-                              {positionName}
+                              {player.username}
                             </span>
                           </div>
                           <div>
