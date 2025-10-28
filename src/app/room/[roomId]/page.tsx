@@ -117,29 +117,27 @@ export default function RoomPage({ params }: PageProps) {
 
   const handlePiecesPlaced = (pieces: Piece[]) => {
     console.log('棋子布局:', pieces);
-    setPlacedPieces(pieces);
-    setIsPlacingPieces(false);
-  };
 
-  const handleReady = () => {
     if (!socket || !user) {
       alert('请先登录');
       return;
     }
 
-    if (placedPieces.length !== 25) {
+    if (pieces.length !== 25) {
       alert('请先完成棋子布局');
       return;
     }
+
+    setPlacedPieces(pieces);
+    setIsPlacingPieces(false);
+    setIsReady(true);
 
     // 通知服务器玩家已准备
     socket.emit(WsMessageType.PLAYER_READY, {
       roomId,
       userId: user.id,
-      pieces: placedPieces,
+      pieces: pieces,
     });
-
-    setIsReady(true);
   };
 
   return (
@@ -179,37 +177,14 @@ export default function RoomPage({ params }: PageProps) {
               </div>
             ) : (
               <div className="text-center py-12">
-                {isReady ? (
-                  <>
-                    <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-10 h-10 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                    <h3 className="text-2xl font-bold text-white mb-2">已准备</h3>
-                    <p className="text-blue-200 mb-6">等待其他玩家准备...</p>
-                  </>
-                ) : (
-                  <>
-                    <div className="w-20 h-20 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-2xl font-bold text-white mb-2">布局完成</h3>
-                    <p className="text-blue-200 mb-6">请点击"开始游戏"准备</p>
-                  </>
-                )}
-                <button
-                  onClick={() => {
-                    setIsPlacingPieces(true);
-                    setIsReady(false);
-                  }}
-                  disabled={isReady}
-                  className="px-6 py-2 bg-white/10 hover:bg-white/20 disabled:bg-white/5 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-                >
-                  重新调整布局
-                </button>
+                <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-10 h-10 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <h3 className="text-2xl font-bold text-white mb-2">已准备</h3>
+                <p className="text-blue-200">等待其他玩家准备...</p>
+                <p className="text-blue-300 text-sm mt-2">所有玩家准备后将自动开始游戏</p>
               </div>
             )}
           </div>
@@ -266,16 +241,6 @@ export default function RoomPage({ params }: PageProps) {
                 })}
               </div>
             </div>
-
-            {/* Ready Button */}
-            {!isPlacingPieces && !isReady && (
-              <button
-                onClick={handleReady}
-                className="w-full px-6 py-4 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold rounded-xl transition-all transform hover:scale-105"
-              >
-                开始游戏
-              </button>
-            )}
 
             {/* Ready Status */}
             {isReady && (
