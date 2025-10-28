@@ -5,31 +5,142 @@ import { useUser } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import PiecePlacement from '@/components/game/PiecePlacement';
-import { Piece, PieceType } from '@/types/game';
+import { Piece, PieceType, WsMessageType } from '@/types/game';
+import { useSocket } from '@/hooks/useSocket';
 
 interface PageProps {
   params: { roomId: string };
+}
+
+interface RoomPlayer {
+  userId: string;
+  username: string;
+  position?: number;
+  isReady: boolean;
+}
+
+interface RoomData {
+  id: string;
+  name: string;
+  players: RoomPlayer[];
+  spectators: any[];
+  gameState?: any;
 }
 
 export default function RoomPage({ params }: PageProps) {
   const { roomId } = params;
   const router = useRouter();
   const { user } = useUser();
+  const { socket, isConnected } = useSocket();
   const [isPlacingPieces, setIsPlacingPieces] = useState(true);
   const [isReady, setIsReady] = useState(false);
-  const [players, setPlayers] = useState<any[]>([]);
+  const [room, setRoom] = useState<RoomData | null>(null);
+  const [isJoining, setIsJoining] = useState(true);
+  const [placedPieces, setPlacedPieces] = useState<Piece[]>([]);
 
-  // TODO: 从 WebSocket 获取房间状态
+  // 加入房间
+  useEffect(() => {
+    if (!socket || !isConnected || !user) return;
+
+    console.log('尝试加入房间:', roomId);
+
+    // 监听加入房间结果
+    const handleJoinRoom = (data: { success: boolean; room?: RoomData; error?: string }) => {
+      console.log('收到 JOIN_ROOM 响应:', data);
+      if (data.success && data.room) {
+        console.log('成功加入房间:', data.room);
+        setRoom(data.room);
+        setIsJoining(false);
+      } else {
+        console.error('加入房间失败:', data.error);
+        alert(data.error || '加入房间失败');
+        router.push('/lobby');
+      }
+    };
+
+    // 监听其他玩家加入
+    const handlePlayerJoined = (data: { room: RoomData }) => {
+      console.log('玩家加入:', data.room);
+      setRoom(data.room);
+    };
+
+    // 监听玩家离开
+    const handlePlayerLeft = (data: { userId: string; room: RoomData }) => {
+      console.log('玩家离开:', data.userId);
+      setRoom(data.room);
+    };
+
+    // 监听玩家准备
+    const handlePlayerReady = (data: { userId: string; room: RoomData }) => {
+      console.log('玩家准备:', data.userId);
+      setRoom(data.room);
+
+      // 如果是当前用户准备，更新本地状态
+      if (data.userId === user.id) {
+        setIsReady(true);
+      }
+    };
+
+    // 监听游戏开始
+    const handleGameStart = (data: { gameState: any }) => {
+      console.log('游戏开始:', data.gameState);
+      setIsPlacingPieces(false);
+    };
+
+    // 注册监听器
+    socket.on(WsMessageType.JOIN_ROOM, handleJoinRoom);
+    socket.on(WsMessageType.PLAYER_JOINED, handlePlayerJoined);
+    socket.on(WsMessageType.PLAYER_LEFT, handlePlayerLeft);
+    socket.on(WsMessageType.PLAYER_READY, handlePlayerReady);
+    socket.on(WsMessageType.GAME_START, handleGameStart);
+
+    // 加入房间
+    socket.emit(WsMessageType.JOIN_ROOM, {
+      roomId,
+      userId: user.id,
+      username: user.firstName || user.username || '玩家',
+    });
+
+    return () => {
+      socket.off(WsMessageType.JOIN_ROOM, handleJoinRoom);
+      socket.off(WsMessageType.PLAYER_JOINED, handlePlayerJoined);
+      socket.off(WsMessageType.PLAYER_LEFT, handlePlayerLeft);
+      socket.off(WsMessageType.PLAYER_READY, handlePlayerReady);
+      socket.off(WsMessageType.GAME_START, handleGameStart);
+
+      // 离开房间
+      socket.emit(WsMessageType.LEAVE_ROOM, {
+        roomId,
+        userId: user.id,
+      });
+    };
+  }, [socket, isConnected, user, roomId, router]);
 
   const handlePiecesPlaced = (pieces: Piece[]) => {
     console.log('棋子布局:', pieces);
-    setIsReady(true);
-    // TODO: 通过 WebSocket 发送准备状态
+    setPlacedPieces(pieces);
+    setIsPlacingPieces(false);
   };
 
   const handleReady = () => {
-    // TODO: 通知服务器玩家已准备
-    alert('等待其他玩家准备...');
+    if (!socket || !user) {
+      alert('请先登录');
+      return;
+    }
+
+    if (placedPieces.length !== 25) {
+      alert('请先完成棋子布局');
+      return;
+    }
+
+    // 通知服务器玩家已准备
+    socket.emit(WsMessageType.PLAYER_READY, {
+      roomId,
+      userId: user.id,
+      pieces: placedPieces,
+    });
+
+    setIsReady(true);
   };
 
   return (
@@ -69,16 +180,34 @@ export default function RoomPage({ params }: PageProps) {
               </div>
             ) : (
               <div className="text-center py-12">
-                <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-10 h-10 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <h3 className="text-2xl font-bold text-white mb-2">布局完成</h3>
-                <p className="text-blue-200 mb-6">等待其他玩家准备...</p>
+                {isReady ? (
+                  <>
+                    <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg className="w-10 h-10 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <h3 className="text-2xl font-bold text-white mb-2">已准备</h3>
+                    <p className="text-blue-200 mb-6">等待其他玩家准备...</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-20 h-20 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg className="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-2xl font-bold text-white mb-2">布局完成</h3>
+                    <p className="text-blue-200 mb-6">请点击"开始游戏"准备</p>
+                  </>
+                )}
                 <button
-                  onClick={() => setIsPlacingPieces(true)}
-                  className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
+                  onClick={() => {
+                    setIsPlacingPieces(true);
+                    setIsReady(false);
+                  }}
+                  disabled={isReady}
+                  className="px-6 py-2 bg-white/10 hover:bg-white/20 disabled:bg-white/5 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
                 >
                   重新调整布局
                 </button>
@@ -89,45 +218,80 @@ export default function RoomPage({ params }: PageProps) {
           {/* Sidebar - Players */}
           <div className="space-y-4">
             <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/10">
-              <h3 className="text-xl font-bold text-white mb-4">玩家 (1/4)</h3>
+              <h3 className="text-xl font-bold text-white mb-4">
+                玩家 ({room?.players.length || 0}/4)
+              </h3>
 
-              {/* Player Slots */}
-              <div className="space-y-3">
-                {[0, 1, 2, 3].map((position) => (
-                  <div
-                    key={position}
-                    className="bg-white/5 rounded-lg p-3 border border-white/10"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                          <span className="text-white font-bold">
-                            {position === 0 ? '上' : position === 1 ? '右' : position === 2 ? '下' : '左'}
-                          </span>
-                        </div>
-                        <div>
-                          <div className="text-white font-semibold">
-                            {position === 0 ? user?.firstName || user?.username : '等待中...'}
+              {isJoining ? (
+                <div className="text-center py-8">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-2"></div>
+                  <p className="text-blue-200 text-sm">加入中...</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {[0, 1, 2, 3].map((position) => {
+                    const player = room?.players.find(p => p.position === position);
+                    const positionName = position === 0 ? '上' : position === 1 ? '右' : position === 2 ? '下' : '左';
+
+                    return (
+                      <div
+                        key={position}
+                        className={`rounded-lg p-3 border transition-all ${
+                          player
+                            ? 'bg-white/5 border-white/10'
+                            : 'bg-black/20 border-white/5'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                              player
+                                ? 'bg-gradient-to-br from-blue-500 to-purple-600'
+                                : 'bg-white/10'
+                            }`}>
+                              <span className={`font-bold ${player ? 'text-white' : 'text-gray-500'}`}>
+                                {positionName}
+                              </span>
+                            </div>
+                            <div>
+                              <div className={`font-semibold ${player ? 'text-white' : 'text-gray-500'}`}>
+                                {player ? player.username : '等待中...'}
+                              </div>
+                              {player && (
+                                <div className={`text-xs ${player.isReady ? 'text-green-400' : 'text-yellow-400'}`}>
+                                  {player.isReady ? '已准备' : '未准备'}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          {position === 0 && (
-                            <div className="text-xs text-green-400">已准备</div>
+                          {player?.userId === user?.id && (
+                            <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-1 rounded">
+                              你
+                            </span>
                           )}
                         </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Ready Button */}
-            {isReady && (
+            {!isPlacingPieces && !isReady && (
               <button
                 onClick={handleReady}
                 className="w-full px-6 py-4 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold rounded-xl transition-all transform hover:scale-105"
               >
                 开始游戏
               </button>
+            )}
+
+            {/* Ready Status */}
+            {isReady && (
+              <div className="w-full px-6 py-4 bg-green-500/20 border-2 border-green-500 text-green-400 font-bold rounded-xl text-center">
+                已准备 ✓
+              </div>
             )}
           </div>
         </div>
