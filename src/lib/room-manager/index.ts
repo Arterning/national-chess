@@ -21,6 +21,7 @@ export interface RoomPlayer {
   socketId: string;
   position?: PlayerPosition;
   isReady: boolean;
+  pieces?: Piece[]; // 玩家的棋子布局
   joinedAt: number; // 加入时间
   lastActiveAt: number; // 最后活跃时间
 }
@@ -271,6 +272,7 @@ class RoomManager {
     }
 
     player.isReady = true;
+    player.pieces = pieces; // 存储玩家的棋子布局
 
     // 检查是否所有玩家都准备好（根据房间类型判断）
     const requiredPlayers = room.roomType === RoomType.TWO_PLAYER ? 2 : 4;
@@ -278,20 +280,21 @@ class RoomManager {
 
     // 如果都准备好，初始化游戏
     if (allReady) {
+      const isTwoPlayer = room.roomType === RoomType.TWO_PLAYER;
       room.gameState = initializeGameState(
         roomId,
         room.players.map(p => ({
           userId: p.userId,
           username: p.username,
           position: p.position!,
-        }))
+        })),
+        isTwoPlayer
       );
 
       // 放置所有玩家的棋子
-      for (const player of room.players) {
-        const gamePlayer = room.gameState.players.find(gp => gp.userId === player.userId);
-        if (gamePlayer) {
-          placePiecesOnBoard(room.gameState.board, pieces);
+      for (const roomPlayer of room.players) {
+        if (roomPlayer.pieces) {
+          placePiecesOnBoard(room.gameState.board, roomPlayer.pieces);
         }
       }
 

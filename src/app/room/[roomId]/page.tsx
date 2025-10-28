@@ -5,6 +5,7 @@ import { useUser } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import PiecePlacement from '@/components/game/PiecePlacement';
+import TwoPlayerPiecePlacement from '@/components/game/TwoPlayerPiecePlacement';
 import TwoPlayerGame from '@/components/game/TwoPlayerGame';
 import { Piece, PieceType, WsMessageType } from '@/types/game';
 import { useSocket } from '@/hooks/useSocket';
@@ -192,7 +193,11 @@ export default function RoomPage({ params }: PageProps) {
             ) : isPlacingPieces ? (
               <div>
                 <h2 className="text-2xl font-bold text-white mb-6">摆放棋子</h2>
-                <PiecePlacement onComplete={handlePiecesPlaced} />
+                {room?.roomType === 'TWO_PLAYER' ? (
+                  <TwoPlayerPiecePlacement onComplete={handlePiecesPlaced} />
+                ) : (
+                  <PiecePlacement onComplete={handlePiecesPlaced} />
+                )}
               </div>
             ) : (
               <div className="text-center py-12">

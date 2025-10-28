@@ -67,9 +67,9 @@ export function getPlayerTerritoryPositions(player: PlayerPosition): Position[] 
 }
 
 // 创建空棋盘
-export function createEmptyBoard(): (Piece | null)[][] {
-  return Array.from({ length: BOARD_SIZE }, () =>
-    Array.from({ length: BOARD_SIZE }, () => null)
+export function createEmptyBoard(rows: number = BOARD_SIZE, cols: number = BOARD_SIZE): (Piece | null)[][] {
+  return Array.from({ length: rows }, () =>
+    Array.from({ length: cols }, () => null)
   );
 }
 
@@ -202,9 +202,11 @@ export function initializeGameState(
     userId: string;
     username: string;
     position: PlayerPosition;
-  }[]
+  }[],
+  isTwoPlayer: boolean = false
 ): GameState {
-  const board = createEmptyBoard();
+  // 二人军棋: 13行 x 5列; 四国军棋: 11行 x 11列
+  const board = isTwoPlayer ? createEmptyBoard(13, 5) : createEmptyBoard(11, 11);
 
   const gamePlayers: Player[] = players.map(p => ({
     userId: p.userId,
