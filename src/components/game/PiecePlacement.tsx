@@ -18,12 +18,31 @@ export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
     setPieces(initialPieces);
   }, []);
 
+  // 行营位置（上方玩家）- 转换为实际棋盘坐标
+  const camps = [
+    { row: 1, col: 4 },
+    { row: 1, col: 6 },
+    { row: 2, col: 5 },
+    { row: 3, col: 4 },
+    { row: 3, col: 6 },
+  ];
+
+  const isCamp = (row: number, col: number) => {
+    return camps.some(c => c.row === row && c.col === col);
+  };
+
   const handleCellClick = (row: number, col: number) => {
     if (!selectedPiece) return;
 
     // 检查是否在上方玩家阵地内 (行: 0-5, 列: 3-7)
     if (row < 0 || row > 5 || col < 3 || col > 7) {
       alert('请在你的阵地内放置棋子');
+      return;
+    }
+
+    // 检查是否是行营（行营不能放置棋子）
+    if (isCamp(row, col)) {
+      alert('行营位置不能放置棋子');
       return;
     }
 
@@ -54,8 +73,82 @@ export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
   };
 
   const handleRandomPlacement = () => {
-    // TODO: 实现随机布局
-    alert('随机布局功能开发中...');
+    // 上方玩家的阵地范围 (行: 0-5, 列: 3-7)
+    const allPositions: Array<{ row: number; col: number }> = [];
+    for (let row = 0; row < 6; row++) {
+      for (let col = 3; col < 8; col++) {
+        // 排除行营位置
+        if (!isCamp(row, col)) {
+          allPositions.push({ row, col });
+        }
+      }
+    }
+
+    // 大本营位置（上方玩家）- 最后一行
+    const headquarters = [
+      { row: 5, col: 4 },
+      { row: 5, col: 6 },
+    ];
+
+    // 后两排位置（地雷只能放这里）- 对于上方玩家是第0和第1行
+    const lastTwoRows: Array<{ row: number; col: number }> = [];
+    for (let row = 0; row < 2; row++) {
+      for (let col = 3; col < 8; col++) {
+        // 排除大本营位置和行营位置
+        if (!headquarters.some(hq => hq.row === row && hq.col === col) && !isCamp(row, col)) {
+          lastTwoRows.push({ row, col });
+        }
+      }
+    }
+
+    // 其他位置（非后两排，且非行营）
+    const otherPositions = allPositions.filter(
+      pos => pos.row >= 2 && !isCamp(pos.row, pos.col)
+    );
+
+    // 洗牌函数
+    const shuffle = <T,>(array: T[]): T[] => {
+      const result = [...array];
+      for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+      }
+      return result;
+    };
+
+    // 洗牌
+    const shuffledLastTwoRows = shuffle(lastTwoRows);
+    const shuffledOtherPositions = shuffle(otherPositions);
+    const shuffledHeadquarters = shuffle([...headquarters]);
+
+    // 分配位置
+    const newPieces = pieces.map(piece => {
+      let position: { row: number; col: number };
+
+      if (piece.type === PieceType.FLAG) {
+        // 军旗放在大本营（随机选择一个）
+        position = shuffledHeadquarters.pop()!;
+      } else if (piece.type === PieceType.LANDMINE) {
+        // 地雷放在后两排
+        position = shuffledLastTwoRows.pop()!;
+      } else {
+        // 其他棋子优先放在非后两排
+        if (shuffledOtherPositions.length > 0) {
+          position = shuffledOtherPositions.pop()!;
+        } else {
+          // 如果没有位置了，放在后两排剩余位置
+          position = shuffledLastTwoRows.pop()!;
+        }
+      }
+
+      return {
+        ...piece,
+        position,
+      };
+    });
+
+    setPieces(newPieces);
+    setSelectedPiece(null);
   };
 
   const handleConfirm = () => {
@@ -67,7 +160,32 @@ export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
       return;
     }
 
-    // TODO: 验证布局是否合法（军旗在大本营、地雷在后两行等）
+    // 验证布局是否合法
+    const headquarters = [
+      { row: 5, col: 4 },
+      { row: 5, col: 6 },
+    ];
+
+    // 检查军旗是否在大本营
+    const flags = pieces.filter(p => p.type === PieceType.FLAG);
+    for (const flag of flags) {
+      const inHeadquarters = headquarters.some(
+        hq => hq.row === flag.position.row && hq.col === flag.position.col
+      );
+      if (!inHeadquarters) {
+        alert('军旗必须放在大本营（最后一行第2列或第4列）');
+        return;
+      }
+    }
+
+    // 检查地雷是否在后两排（对于上方玩家是第0和第1行）
+    const landmines = pieces.filter(p => p.type === PieceType.LANDMINE);
+    for (const mine of landmines) {
+      if (mine.position.row > 1) {
+        alert('地雷必须放在后两排（第1-2行）');
+        return;
+      }
+    }
 
     onComplete(pieces);
   };
@@ -100,21 +218,35 @@ export default function PiecePlacement({ onComplete }: PiecePlacementProps) {
               const piece = pieces.find(
                 p => p.position.row === actualRow && p.position.col === actualCol
               );
+              const isCampCell = isCamp(actualRow, actualCol);
+
+              // 大本营位置 - 在最后一行（第6行，索引5）
+              const isHeadquarters = (actualRow === 5 && actualCol === 4) || (actualRow === 5 && actualCol === 6);
 
               return (
                 <button
                   key={`${actualRow}-${actualCol}`}
                   onClick={() => handleCellClick(actualRow, actualCol)}
+                  disabled={isCampCell}
                   className={`
-                    aspect-square rounded-lg border-2 transition-all
-                    ${selectedPiece ? 'cursor-pointer hover:border-blue-500' : ''}
-                    ${piece ? 'bg-blue-600 border-blue-500' : 'bg-white/5 border-white/20'}
+                    aspect-square border-2 transition-all relative
+                    ${isCampCell ? 'rounded-full bg-orange-900/30 border-orange-500/50 cursor-not-allowed' : 'rounded-lg'}
+                    ${isHeadquarters ? 'bg-yellow-900/30 border-yellow-500' : ''}
+                    ${!isCampCell && !isHeadquarters && selectedPiece ? 'cursor-pointer hover:border-blue-500' : ''}
+                    ${!isCampCell && !isHeadquarters && piece ? 'bg-blue-600 border-blue-500' : ''}
+                    ${!isCampCell && !isHeadquarters && !piece ? 'bg-white/5 border-white/20' : ''}
                   `}
                 >
                   {piece && (
                     <span className="text-white font-bold text-lg">
                       {PIECE_NAMES[piece.type]}
                     </span>
+                  )}
+                  {isCampCell && (
+                    <span className="text-orange-400 text-xs">营</span>
+                  )}
+                  {isHeadquarters && !piece && (
+                    <span className="text-yellow-400 text-xs">营</span>
                   )}
                 </button>
               );
