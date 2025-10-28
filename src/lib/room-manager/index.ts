@@ -16,6 +16,15 @@ export interface RoomPlayer {
   socketId: string;
   position?: PlayerPosition;
   isReady: boolean;
+  joinedAt: number; // 加入时间
+  lastActiveAt: number; // 最后活跃时间
+}
+
+export interface Spectator {
+  userId: string;
+  username: string;
+  socketId: string;
+  joinedAt: number;
 }
 
 export interface Room {
@@ -23,6 +32,7 @@ export interface Room {
   name: string;
   host: string; // userId
   players: RoomPlayer[];
+  spectators: Spectator[]; // 观战者
   maxPlayers: number;
   isPrivate: boolean;
   password?: string;
@@ -30,8 +40,55 @@ export interface Room {
   createdAt: number;
 }
 
+// 自动踢出超时时间（2分钟）
+const PLAYER_TIMEOUT_MS = 2 * 60 * 1000;
+
 class RoomManager {
   private rooms: Map<string, Room> = new Map();
+  private inactivityTimers: Map<string, NodeJS.Timeout> = new Map();
+
+  constructor() {
+    // 启动定期检查不活跃玩家的任务
+    setInterval(() => this.checkInactivePlayers(), 30000); // 每30秒检查一次
+  }
+
+  // 检查并踢出不活跃的玩家
+  private checkInactivePlayers() {
+    const now = Date.now();
+
+    for (const [roomId, room] of this.rooms.entries()) {
+      // 只检查等待中的房间，游戏已开始的不踢人
+      if (room.gameState?.status === 'PLAYING') continue;
+
+      const inactivePlayers = room.players.filter(player => {
+        // 如果玩家已准备，不踢出
+        if (player.isReady) return false;
+
+        // 检查是否超时（2分钟）
+        return now - player.lastActiveAt > PLAYER_TIMEOUT_MS;
+      });
+
+      // 踢出不活跃玩家
+      for (const player of inactivePlayers) {
+        console.log(`踢出不活跃玩家: ${player.username} (房间: ${roomId})`);
+        this.leaveRoom(roomId, player.userId);
+      }
+    }
+  }
+
+  // 更新玩家活跃时间
+  updatePlayerActivity(roomId: string, userId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+
+    const player = room.players.find(p => p.userId === userId);
+    if (player) {
+      player.lastActiveAt = Date.now();
+      return true;
+    }
+
+    return false;
+  }
 
   // 创建房间
   createRoom(
@@ -46,6 +103,7 @@ class RoomManager {
       maxPlayers?: number;
     } = {}
   ): Room {
+    const now = Date.now();
     const room: Room = {
       id: roomId,
       name,
@@ -56,57 +114,82 @@ class RoomManager {
           username: hostUsername,
           socketId: hostSocketId,
           isReady: false,
+          joinedAt: now,
+          lastActiveAt: now,
         },
       ],
+      spectators: [],
       maxPlayers: options.maxPlayers || 4,
       isPrivate: options.isPrivate || false,
       password: options.password,
-      createdAt: Date.now(),
+      createdAt: now,
     };
 
     this.rooms.set(roomId, room);
     return room;
   }
 
-  // 加入房间
+  // 加入房间（玩家或观战者）
   joinRoom(
     roomId: string,
     userId: string,
     username: string,
     socketId: string,
-    password?: string
-  ): { success: boolean; room?: Room; error?: string } {
+    password?: string,
+    asSpectator?: boolean
+  ): { success: boolean; room?: Room; error?: string; isSpectator?: boolean } {
     const room = this.rooms.get(roomId);
 
     if (!room) {
       return { success: false, error: '房间不存在' };
     }
 
-    if (room.players.length >= room.maxPlayers) {
-      return { success: false, error: '房间已满' };
-    }
-
     if (room.isPrivate && room.password !== password) {
       return { success: false, error: '密码错误' };
     }
+
+    const now = Date.now();
 
     // 检查是否已在房间中
     const existingPlayer = room.players.find(p => p.userId === userId);
     if (existingPlayer) {
       // 更新 socket ID（重连场景）
       existingPlayer.socketId = socketId;
-      return { success: true, room };
+      existingPlayer.lastActiveAt = now;
+      return { success: true, room, isSpectator: false };
     }
 
-    // 添加新玩家
+    // 游戏已开始或房间已满，以观战者身份加入
+    if (asSpectator || room.gameState?.status === 'PLAYING' || room.players.length >= room.maxPlayers) {
+      // 检查是否已经是观战者
+      const existingSpectator = room.spectators.find(s => s.userId === userId);
+      if (existingSpectator) {
+        existingSpectator.socketId = socketId;
+        return { success: true, room, isSpectator: true };
+      }
+
+      // 添加为观战者
+      room.spectators.push({
+        userId,
+        username,
+        socketId,
+        joinedAt: now,
+      });
+
+      return { success: true, room, isSpectator: true };
+    }
+
+    // 添加为玩家
     room.players.push({
       userId,
       username,
       socketId,
       isReady: false,
+      joinedAt: now,
+      lastActiveAt: now,
     });
 
-    return { success: true, room };
+    return { success: true, room, isSpectator: false };
   }
 
   // 离开房间
@@ -117,9 +200,13 @@ class RoomManager {
       return { success: false, shouldDeleteRoom: false };
     }
 
+    // 移除玩家
     room.players = room.players.filter(p => p.userId !== userId);
 
-    // 如果房间为空，删除房间
+    // 移除观战者
+    room.spectators = room.spectators.filter(s => s.userId !== userId);
+
+    // 如果房间为空（没有玩家），删除房间
     if (room.players.length === 0) {
       this.rooms.delete(roomId);
       return { success: true, shouldDeleteRoom: true };
